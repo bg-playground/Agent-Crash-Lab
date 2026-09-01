@@ -17,7 +17,13 @@ FORBIDDEN_PATTERNS = (
     re.compile(r"preview\.getsolari\.com", re.IGNORECASE),
     re.compile(r"\b(?:ws|wss)://", re.IGNORECASE),
     re.compile(r"cdp(?:Endpoint|_endpoint| endpoint)", re.IGNORECASE),
-    re.compile(r"signed[_ -]?replay[_ -]?url", re.IGNORECASE),
+    # Policy/schema text may safely name signed replay URLs (for example,
+    # `signed_replay_urls_committed: false`). Reject an actual replay URL
+    # value instead of rejecting the descriptive field name itself.
+    re.compile(
+        r"signed[_ -]?replay[_ -]?url\s*[:=]\s*[\"']?https?://",
+        re.IGNORECASE,
+    ),
     re.compile(r"SOLARI_API_KEY", re.IGNORECASE),
     re.compile(r"OPENAI_API_KEY", re.IGNORECASE),
 )
