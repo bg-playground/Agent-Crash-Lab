@@ -89,10 +89,13 @@ h2 {{ margin-top: 2.2em; }}
 .fail {{ background: color-mix(in srgb, red 28%, transparent); }}
 .unknown {{ background: color-mix(in srgb, gray 20%, transparent); }}
 .note {{ border-left: 4px solid currentColor; padding: 10px 16px; opacity: .88; }}
-table {{ border-collapse: collapse; width: 100%; font-size: .86rem; }}
-th, td {{ border-bottom: 1px solid #8885; padding: 9px 7px; text-align: left; vertical-align: top; }}
+table {{ border-collapse: collapse; width: 100%; min-width: 1500px; font-size: .86rem; }}
+th, td {{ border-bottom: 1px solid #8885; padding: 9px 7px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }}
 th {{ position: sticky; top: 0; background: Canvas; }}
-.table-wrap {{ overflow-x: auto; }}
+th:nth-child(7), td:nth-child(7) {{ min-width: 330px; }}
+th:nth-child(9), td:nth-child(9) {{ min-width: 210px; }}
+th:nth-child(10), td:nth-child(10) {{ min-width: 135px; }}
+.table-wrap {{ overflow-x: auto; padding-bottom: 6px; }}
 code {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
 footer {{ margin-top: 50px; opacity: .72; }}
 </style>
