@@ -5,6 +5,7 @@ import math
 import os
 from collections import Counter
 from dataclasses import dataclass
+from typing import Awaitable, Callable
 
 from solari_browser import Solari
 from solari_sandbox import SandboxClient
@@ -15,6 +16,9 @@ from m1b_live import BASE_URL, CHAOSSHOP_SERVER, MODEL, PORT, Trial
 VALID_TRIALS = 20
 CONDITION = ("review_rollback",)
 WILSON_Z = 1.959963984540054
+# Solari preview capabilities expire after roughly an hour. Renew between trials
+# so a long characterization does not become permanently infrastructure-invalid.
+PREVIEW_RENEWAL_SECONDS = 45 * 60
 
 
 @dataclass(frozen=True)
@@ -74,11 +78,26 @@ def print_trial(index: int, trial: Trial) -> None:
     print("     replay=ready")
 
 
-async def collect_valid_trials(solari: Solari, shop_url: str) -> tuple[list[Trial], int]:
+async def collect_valid_trials(
+    solari: Solari,
+    initial_shop_url: str,
+    renew_preview: Callable[[], Awaitable[str]],
+    *,
+    monotonic: Callable[[], float] | None = None,
+) -> tuple[list[Trial], int]:
+    clock = monotonic or asyncio.get_running_loop().time
     valid: list[Trial] = []
     invalid_attempts = 0
     attempt = 0
+    shop_url = initial_shop_url
+    preview_minted_at = clock()
+
     while len(valid) < VALID_TRIALS:
+        if clock() - preview_minted_at >= PREVIEW_RENEWAL_SECONDS:
+            shop_url = await renew_preview()
+            preview_minted_at = clock()
+            print("PREVIEW renewed between trials (credential redacted)")
+
         attempt += 1
         ordinal = len(valid) + 1
         try:
@@ -86,7 +105,9 @@ async def collect_valid_trials(solari: Solari, shop_url: str) -> tuple[list[Tria
         except CampaignInfrastructureError as exc:
             invalid_attempts += 1
             print(f"INVALID attempt-{attempt:02d}: {exc}")
-            print("        excluded from 20 valid trials; retrying same ordinal")
+            print("        excluded from 20 valid trials; renewing preview and retrying same ordinal")
+            shop_url = await renew_preview()
+            preview_minted_at = clock()
             continue
         valid.append(trial)
         print_trial(ordinal, trial)
@@ -131,15 +152,23 @@ async def main() -> None:
                 "sh",
                 args=["-c", "nohup python3 /tmp/chaosshop_m1c.py >/tmp/chaosshop-m1c.log 2>&1 &"],
             )
-            preview = await sandbox.preview_url(PORT)
-            if not isinstance(preview, dict) or not isinstance(preview.get("url"), str):
-                raise RuntimeError(
-                    f"Unexpected Solari preview_url response type: {type(preview).__name__}"
-                )
-            shop_url = preview["url"]
+
+            async def renew_preview() -> str:
+                preview = await sandbox.preview_url(PORT)
+                if not isinstance(preview, dict) or not isinstance(preview.get("url"), str):
+                    raise CampaignInfrastructureError(
+                        f"unexpected preview response type ({type(preview).__name__})"
+                    )
+                return preview["url"]
+
+            shop_url = await renew_preview()
 
             async with Solari(api_key=solari_key) as solari:
-                valid, invalid_attempts = await collect_valid_trials(solari, shop_url)
+                valid, invalid_attempts = await collect_valid_trials(
+                    solari,
+                    shop_url,
+                    renew_preview,
+                )
                 print_summary(summarize(valid, invalid_attempts))
         except CampaignInfrastructureError as exc:
             print("\nM1C INVALID/ABORTED")
