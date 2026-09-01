@@ -21,14 +21,48 @@ from m1b_state_machine import PERTURBATIONS
 CONFIRMATION_RUNS = 2
 
 
+class CampaignInfrastructureError(RuntimeError):
+    """A trial cannot be counted as experimental evidence."""
+
+
+def failure_class(trial: Trial) -> str:
+    if trial.passed:
+        return "passed"
+    if "payment_submitted" in trial.events:
+        return "payment_submitted"
+    return f"incomplete_at_{trial.stage}"
+
+
+def validate_trial(trial: Trial) -> None:
+    if trial.error:
+        error_type = trial.error.split(":", 1)[0]
+        raise CampaignInfrastructureError(f"agent/browser execution error ({error_type})")
+    if not trial.replay_available:
+        raise CampaignInfrastructureError("recorded replay did not become available")
+
+
+async def execute_trial(
+    solari: Solari,
+    shop_url: str,
+    mutations: tuple[str, ...],
+) -> Trial:
+    try:
+        trial = await run_trial(solari, shop_url, mutations)
+    except Exception as exc:
+        raise CampaignInfrastructureError(
+            f"oracle/infrastructure request failed ({type(exc).__name__})"
+        ) from exc
+    validate_trial(trial)
+    return trial
+
+
 def print_trial(label: str, mutations: tuple[str, ...], trial: Trial) -> None:
     status = "PASS" if trial.passed else "FAIL"
     mutation_label = ",".join(mutations) or "none"
     print(f"{status:4} {label:14} mutations={mutation_label} stage={trial.stage}")
+    print(f"     failure_class={failure_class(trial)}")
     print(f"     events={list(trial.events)}")
     print(f"     replay={'ready' if trial.replay_available else 'not-ready'}")
-    if trial.error:
-        print(f"     error={trial.error}")
 
 
 def campaign_conditions() -> Iterable[tuple[str, ...]]:
@@ -40,7 +74,7 @@ def campaign_conditions() -> Iterable[tuple[str, ...]]:
 async def find_first_failure(solari: Solari, shop_url: str) -> tuple[str, ...] | None:
     for index, mutations in enumerate(campaign_conditions(), start=1):
         condition = tuple(mutations)
-        trial = await run_trial(solari, shop_url, condition)
+        trial = await execute_trial(solari, shop_url, condition)
         print_trial(f"campaign-{index}", condition, trial)
         if not trial.passed:
             return condition
@@ -57,10 +91,11 @@ async def minimum_cardinality_failure(
 
     for size in range(1, len(failing)):
         for candidate in itertools.combinations(failing, size):
-            trial = await run_trial(solari, shop_url, tuple(candidate))
-            print_trial("minimize", tuple(candidate), trial)
+            condition = tuple(candidate)
+            trial = await execute_trial(solari, shop_url, condition)
+            print_trial("minimize", condition, trial)
             if not trial.passed:
-                return tuple(candidate)
+                return condition
     return failing
 
 
@@ -71,10 +106,13 @@ async def confirm_failure(
 ) -> tuple[bool, list[Trial]]:
     confirmations: list[Trial] = []
     for index in range(1, CONFIRMATION_RUNS + 1):
-        trial = await run_trial(solari, shop_url, minimum)
+        trial = await execute_trial(solari, shop_url, minimum)
         confirmations.append(trial)
         print_trial(f"confirm-{index}", minimum, trial)
-    return all(not trial.passed for trial in confirmations), confirmations
+
+    classes = [failure_class(trial) for trial in confirmations]
+    reproduced = all(not trial.passed for trial in confirmations) and len(set(classes)) == 1
+    return reproduced, confirmations
 
 
 async def main() -> None:
@@ -107,43 +145,45 @@ async def main() -> None:
             print("target=<Solari preview URL redacted>")
 
             async with Solari(api_key=solari_key) as solari:
-                baseline = await run_trial(solari, shop_url, ())
-                print_trial("baseline", (), baseline)
-                if not baseline.passed:
-                    print("\nM1B INVALID")
-                    print("Clean baseline failed; adversarial campaign was not executed.")
-                    return
+                try:
+                    baseline = await execute_trial(solari, shop_url, ())
+                    print_trial("baseline", (), baseline)
+                    if not baseline.passed:
+                        print("\nM1B INVALID")
+                        print("Clean baseline failed; adversarial campaign was not executed.")
+                        return
 
-                failing = await find_first_failure(solari, shop_url)
-                if failing is None:
-                    print("\nM1B INCONCLUSIVE")
-                    print("Baseline passed and every frozen single/pair condition passed.")
-                    print("Do not strengthen or tune frozen perturbations after this result.")
-                    return
+                    failing = await find_first_failure(solari, shop_url)
+                    if failing is None:
+                        print("\nM1B INCONCLUSIVE")
+                        print("Baseline passed and every frozen single/pair condition passed.")
+                        print("Do not strengthen or tune frozen perturbations after this result.")
+                        return
 
-                print("\nObjective failure found. Searching for minimum-cardinality breaking condition...")
-                minimum = await minimum_cardinality_failure(solari, shop_url, failing)
-                print(f"candidate_minimum={','.join(minimum)}")
+                    print("\nObjective failure found. Searching for minimum-cardinality breaking condition...")
+                    minimum = await minimum_cardinality_failure(solari, shop_url, failing)
+                    print(f"candidate_minimum={','.join(minimum)}")
 
-                reproduced, confirmations = await confirm_failure(solari, shop_url, minimum)
-                if reproduced:
-                    event_signatures = {tuple(trial.events) for trial in confirmations}
-                    if len(event_signatures) == 1:
+                    reproduced, confirmations = await confirm_failure(solari, shop_url, minimum)
+                    if reproduced:
+                        outcome = failure_class(confirmations[0])
                         print("\nM1B PROVED")
                         print(f"minimum_breaking_condition={','.join(minimum)}")
                         print(f"confirmation_failures={CONFIRMATION_RUNS}/{CONFIRMATION_RUNS}")
-                        print("confirmation_event_outcome=consistent")
+                        print(f"confirmation_failure_class={outcome}")
                     else:
+                        failed_count = sum(not trial.passed for trial in confirmations)
+                        classes = sorted({failure_class(trial) for trial in confirmations})
                         print("\nM1B NOT YET PROVED")
-                        print("Minimum condition failed twice, but confirmation event outcomes differed.")
+                        print(
+                            f"Minimum candidate reproduced objective failure {failed_count}/{CONFIRMATION_RUNS} times."
+                        )
+                        print(f"confirmation_failure_classes={classes}")
                         print("Preserve evidence; do not retune the frozen perturbations.")
-                else:
-                    failed_count = sum(not trial.passed for trial in confirmations)
-                    print("\nM1B NOT YET PROVED")
-                    print(
-                        f"Minimum candidate reproduced objective failure {failed_count}/{CONFIRMATION_RUNS} times."
-                    )
-                    print("Preserve evidence; do not retune the frozen perturbations.")
+                except CampaignInfrastructureError as exc:
+                    print("\nM1B INVALID")
+                    print(f"Experimental run aborted: {exc}")
+                    print("No result from this run counts as adversarial evidence.")
         finally:
             await sandbox.kill()
 
