@@ -13,7 +13,12 @@ This milestone intentionally uses a brittle computer-use policy rather than an L
 
 ## Mutation
 
-Seed `48291` injects an unexpected modal whose action has the same accessible label (`Continue`) as the underlying task action. The baseline contains one matching action; the mutated environment contains two. The intentionally brittle policy therefore fails under the mutation.
+Seed `48291` introduces two coupled, deterministic changes:
+
+- an unexpected modal whose action keeps the accessible label `Continue`;
+- the underlying task action drifts from `Continue` to `Proceed to shipping`.
+
+The baseline policy clicks `Continue` and completes the task. Under the mutation, the exact same policy deterministically clicks the modal action instead, dismisses the modal, and leaves the task incomplete. Re-running the same seed must produce the same mutation and the same wrong-action outcome.
 
 ## Run
 
@@ -29,10 +34,10 @@ A successful M0 run ends with:
 
 ```text
 M0 PROVED
-Baseline passes; seed 48291 fails twice with the same deterministic mutation.
+Baseline passes; seed 48291 fails twice under the same mutation and wrong-action outcome.
 ```
 
-The output also includes the Solari browser session id and replay URL when the asynchronous replay is ready.
+The output also includes the mutation id, last action, Solari browser session id, and replay URL when the asynchronous replay is ready.
 
 ## M0 acceptance gate
 
@@ -41,6 +46,7 @@ M0 is accepted only when all of the following are true against the real Solari A
 - baseline trial passes;
 - seeded trial fails;
 - the same seed fails again;
-- both failures arise from the same deterministic mutation;
+- both failures arise from `unexpected-modal+primary-label-drift`;
+- both failures end with `lastAction=dismissed-modal`;
 - recorded Solari session evidence is available;
 - sandbox and browser resources are released after execution.
