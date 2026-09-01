@@ -90,6 +90,12 @@ async function waitForReplay(solari: Solari, sessionId: string): Promise<string 
   return undefined
 }
 
+function withSeed(targetUrl: string, seed: number): string {
+  const url = new URL(targetUrl)
+  url.searchParams.set("seed", String(seed))
+  return url.toString()
+}
+
 async function runTrial(solari: Solari, targetUrl: string, label: string, seed: number): Promise<Trial> {
   const browser = await solari.launch({ recording: true })
   const sessionId = browser.id
@@ -100,7 +106,7 @@ async function runTrial(solari: Solari, targetUrl: string, label: string, seed: 
 
   try {
     const page = await browser.newPage()
-    await page.goto(`${targetUrl}?seed=${seed}`, { waitUntil: "networkidle" })
+    await page.goto(withSeed(targetUrl, seed), { waitUntil: "networkidle" })
 
     mutations = (await page.locator("body").getAttribute("data-mutations")) ?? "unknown"
 
