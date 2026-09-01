@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from m1b_live import Trial
-from m1c_reliability import VALID_TRIALS, summarize, wilson_interval
+from m1c_reliability import (
+    CONDITION,
+    PREVIEW_RENEWAL_SECONDS,
+    VALID_TRIALS,
+    collect_valid_trials,
+    summarize,
+    wilson_interval,
+)
 
 
 def trial(passed: bool, stage: str = "review", events: tuple[str, ...] = ()) -> Trial:
@@ -63,6 +71,52 @@ class SummaryTests(unittest.TestCase):
             result.failure_classes,
             {"incomplete_at_shipping": 4, "payment_submitted": 1},
         )
+
+
+class PreviewRenewalTests(unittest.IsolatedAsyncioTestCase):
+    async def test_time_based_renewal_preserves_condition_and_twenty_valid_trials(self) -> None:
+        clock_values = iter([0.0] + [PREVIEW_RENEWAL_SECONDS + i for i in range(100)])
+        clock = lambda: next(clock_values)
+        renew = AsyncMock(return_value="https://renewed.invalid/?pt_token=redacted")
+        execute = AsyncMock(return_value=trial(True))
+
+        with patch("m1c_reliability.execute_trial", execute):
+            valid, invalid = await collect_valid_trials(
+                object(),
+                "https://initial.invalid/?pt_token=redacted",
+                renew,
+                monotonic=clock,
+            )
+
+        self.assertEqual(len(valid), VALID_TRIALS)
+        self.assertEqual(invalid, 0)
+        self.assertGreaterEqual(renew.await_count, 1)
+        self.assertEqual(execute.await_count, VALID_TRIALS)
+        for call in execute.await_args_list:
+            self.assertEqual(call.args[2], CONDITION)
+
+    async def test_invalid_attempt_is_replaced_after_preview_renewal(self) -> None:
+        from m1b_campaign import CampaignInfrastructureError
+
+        outcomes = [CampaignInfrastructureError("transport failed")] + [trial(True)] * VALID_TRIALS
+        execute = AsyncMock(side_effect=outcomes)
+        renew = AsyncMock(return_value="https://renewed.invalid/?pt_token=redacted")
+        clock = lambda: 0.0
+
+        with patch("m1c_reliability.execute_trial", execute):
+            valid, invalid = await collect_valid_trials(
+                object(),
+                "https://initial.invalid/?pt_token=redacted",
+                renew,
+                monotonic=clock,
+            )
+
+        self.assertEqual(len(valid), VALID_TRIALS)
+        self.assertEqual(invalid, 1)
+        self.assertEqual(execute.await_count, VALID_TRIALS + 1)
+        self.assertEqual(renew.await_count, 1)
+        for call in execute.await_args_list:
+            self.assertEqual(call.args[2], CONDITION)
 
 
 if __name__ == "__main__":
