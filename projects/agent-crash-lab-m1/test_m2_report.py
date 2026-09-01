@@ -31,7 +31,7 @@ class M2ReportTests(unittest.TestCase):
         report = render_report(self.data)
         self.assertIn("server_authoritative_state", report)
         self.assertIn("agent's own final message is explicitly not the oracle", report)
-        self.assertIn("not a universal reliability rate", report)
+        self.assertIn("do not establish a universal reliability rate", report)
         self.assertIn("not a universal model reliability guarantee", report)
 
     def test_report_is_transparent_about_missing_trial_history(self) -> None:
