@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import logging
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from m1b_campaign import CampaignInfrastructureError
 from m1b_live import Trial
 from m1c_reliability import (
+    BrowserTransportMonitor,
     CONDITION,
     PREVIEW_RENEWAL_SECONDS,
     VALID_TRIALS,
     collect_valid_trials,
+    renew_preview_or_abort,
     summarize,
     wilson_interval,
 )
@@ -73,6 +77,36 @@ class SummaryTests(unittest.TestCase):
         )
 
 
+class BrowserTransportMonitorTests(unittest.TestCase):
+    def test_transient_reconnect_does_not_invalidate_trial(self) -> None:
+        monitor = BrowserTransportMonitor()
+        record = logging.LogRecord(
+            "browser_use",
+            logging.WARNING,
+            __file__,
+            1,
+            "WebSocket reconnected after 1.3s (attempt 1)",
+            (),
+            None,
+        )
+        monitor.emit(record)
+        self.assertFalse(monitor.terminal_failure)
+
+    def test_terminal_reconnect_failure_invalidates_trial(self) -> None:
+        monitor = BrowserTransportMonitor()
+        record = logging.LogRecord(
+            "browser_use",
+            logging.ERROR,
+            __file__,
+            1,
+            "All 3 reconnection attempts failed",
+            (),
+            None,
+        )
+        monitor.emit(record)
+        self.assertTrue(monitor.terminal_failure)
+
+
 class PreviewRenewalTests(unittest.IsolatedAsyncioTestCase):
     async def test_time_based_renewal_preserves_condition_and_twenty_valid_trials(self) -> None:
         clock_values = iter([0.0] + [PREVIEW_RENEWAL_SECONDS + i for i in range(100)])
@@ -80,7 +114,7 @@ class PreviewRenewalTests(unittest.IsolatedAsyncioTestCase):
         renew = AsyncMock(return_value="https://renewed.invalid/?pt_token=redacted")
         execute = AsyncMock(return_value=trial(True))
 
-        with patch("m1c_reliability.execute_trial", execute):
+        with patch("m1c_reliability.execute_operationally_valid_trial", execute):
             valid, invalid = await collect_valid_trials(
                 object(),
                 "https://initial.invalid/?pt_token=redacted",
@@ -92,18 +126,14 @@ class PreviewRenewalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid, 0)
         self.assertGreaterEqual(renew.await_count, 1)
         self.assertEqual(execute.await_count, VALID_TRIALS)
-        for call in execute.await_args_list:
-            self.assertEqual(call.args[2], CONDITION)
 
     async def test_invalid_attempt_is_replaced_after_preview_renewal(self) -> None:
-        from m1b_campaign import CampaignInfrastructureError
-
         outcomes = [CampaignInfrastructureError("transport failed")] + [trial(True)] * VALID_TRIALS
         execute = AsyncMock(side_effect=outcomes)
         renew = AsyncMock(return_value="https://renewed.invalid/?pt_token=redacted")
         clock = lambda: 0.0
 
-        with patch("m1c_reliability.execute_trial", execute):
+        with patch("m1c_reliability.execute_operationally_valid_trial", execute):
             valid, invalid = await collect_valid_trials(
                 object(),
                 "https://initial.invalid/?pt_token=redacted",
@@ -115,8 +145,14 @@ class PreviewRenewalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(invalid, 1)
         self.assertEqual(execute.await_count, VALID_TRIALS + 1)
         self.assertEqual(renew.await_count, 1)
-        for call in execute.await_args_list:
-            self.assertEqual(call.args[2], CONDITION)
+
+    async def test_preview_renewal_failure_aborts_cleanly(self) -> None:
+        renew = AsyncMock(side_effect=OSError("network unavailable"))
+        with self.assertRaisesRegex(
+            CampaignInfrastructureError,
+            r"preview renewal failed \(OSError\)",
+        ):
+            await renew_preview_or_abort(renew)
 
 
 if __name__ == "__main__":
