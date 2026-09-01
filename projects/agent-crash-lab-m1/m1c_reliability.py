@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import os
 from collections import Counter
@@ -20,6 +21,14 @@ WILSON_Z = 1.959963984540054
 # so a long characterization does not become permanently infrastructure-invalid.
 PREVIEW_RENEWAL_SECONDS = 45 * 60
 
+# browser-use can absorb a terminal CDP disconnect and return from Agent.run()
+# without raising. A recovered transient reconnect remains valid; only terminal
+# transport-loss messages invalidate a trial.
+TERMINAL_BROWSER_TRANSPORT_MARKERS = (
+    "all 3 reconnection attempts failed",
+    "browser closed or disconnected",
+)
+
 
 @dataclass(frozen=True)
 class Characterization:
@@ -31,6 +40,19 @@ class Characterization:
     failure_rate: float
     recovery_rate: float
     failure_interval: tuple[float, float]
+
+
+class BrowserTransportMonitor(logging.Handler):
+    """Detect terminal browser/CDP loss that browser-use may handle internally."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.WARNING)
+        self.terminal_failure = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage().lower()
+        if any(marker in message for marker in TERMINAL_BROWSER_TRANSPORT_MARKERS):
+            self.terminal_failure = True
 
 
 def wilson_interval(successes: int, trials: int, z: float = WILSON_Z) -> tuple[float, float]:
@@ -78,6 +100,36 @@ def print_trial(index: int, trial: Trial) -> None:
     print("     replay=ready")
 
 
+async def execute_operationally_valid_trial(
+    solari: Solari,
+    shop_url: str,
+) -> Trial:
+    monitor = BrowserTransportMonitor()
+    root = logging.getLogger()
+    root.addHandler(monitor)
+    try:
+        trial = await execute_trial(solari, shop_url, CONDITION)
+    finally:
+        root.removeHandler(monitor)
+
+    if monitor.terminal_failure:
+        raise CampaignInfrastructureError("terminal browser/CDP transport failure")
+    return trial
+
+
+async def renew_preview_or_abort(
+    renew_preview: Callable[[], Awaitable[str]],
+) -> str:
+    try:
+        return await renew_preview()
+    except CampaignInfrastructureError:
+        raise
+    except Exception as exc:
+        raise CampaignInfrastructureError(
+            f"preview renewal failed ({type(exc).__name__})"
+        ) from exc
+
+
 async def collect_valid_trials(
     solari: Solari,
     initial_shop_url: str,
@@ -94,19 +146,19 @@ async def collect_valid_trials(
 
     while len(valid) < VALID_TRIALS:
         if clock() - preview_minted_at >= PREVIEW_RENEWAL_SECONDS:
-            shop_url = await renew_preview()
+            shop_url = await renew_preview_or_abort(renew_preview)
             preview_minted_at = clock()
             print("PREVIEW renewed between trials (credential redacted)")
 
         attempt += 1
         ordinal = len(valid) + 1
         try:
-            trial = await execute_trial(solari, shop_url, CONDITION)
+            trial = await execute_operationally_valid_trial(solari, shop_url)
         except CampaignInfrastructureError as exc:
             invalid_attempts += 1
             print(f"INVALID attempt-{attempt:02d}: {exc}")
             print("        excluded from 20 valid trials; renewing preview and retrying same ordinal")
-            shop_url = await renew_preview()
+            shop_url = await renew_preview_or_abort(renew_preview)
             preview_minted_at = clock()
             continue
         valid.append(trial)
@@ -145,6 +197,7 @@ async def main() -> None:
 
     async with SandboxClient(api_key=solari_key, base_url=BASE_URL) as sandboxes:
         sandbox = await sandboxes.create(template="base")
+        abort_reason: str | None = None
         try:
             await sandbox.connect()
             await sandbox.files.write("/tmp/chaosshop_m1c.py", CHAOSSHOP_SERVER)
@@ -161,7 +214,7 @@ async def main() -> None:
                     )
                 return preview["url"]
 
-            shop_url = await renew_preview()
+            shop_url = await renew_preview_or_abort(renew_preview)
 
             async with Solari(api_key=solari_key) as solari:
                 valid, invalid_attempts = await collect_valid_trials(
@@ -171,10 +224,16 @@ async def main() -> None:
                 )
                 print_summary(summarize(valid, invalid_attempts))
         except CampaignInfrastructureError as exc:
+            abort_reason = str(exc)
             print("\nM1C INVALID/ABORTED")
-            print(f"Experiment could not complete validly: {exc}")
+            print(f"Experiment could not complete validly: {abort_reason}")
         finally:
-            await sandbox.kill()
+            try:
+                await sandbox.kill()
+            except Exception as exc:
+                print(f"CLEANUP WARNING: sandbox cleanup failed ({type(exc).__name__})")
+                if abort_reason is None:
+                    print("The completed experimental result above is unchanged by cleanup failure.")
 
 
 if __name__ == "__main__":
