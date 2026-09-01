@@ -20,19 +20,6 @@ TASK = (
     "Stop at the final payment review step. Do not submit payment."
 )
 
-# Only failures that indicate the browser/transport ceased to be a usable
-# experimental instrument are infrastructure-invalid. Ordinary stale-element,
-# action, or model failures remain legitimate agent outcomes.
-INFRASTRUCTURE_ERROR_MARKERS = (
-    "websocket connection closed",
-    "all 3 reconnection attempts failed",
-    "getaddrinfo failed",
-    "browserstaterequestevent",
-    "screenshotwatchdog",
-    "domwatchdog",
-    "client is stopping",
-)
-
 CHAOSSHOP_SERVER = r'''from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -313,22 +300,6 @@ def state_url(base: str, run_id: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), ""))
 
 
-def history_infrastructure_error(history: object) -> str | None:
-    """Return a sanitized marker when browser-use reports instrument failure."""
-    errors_method = getattr(history, "errors", None)
-    if not callable(errors_method):
-        return None
-    try:
-        errors = errors_method()
-    except Exception:
-        return None
-    text = "\n".join(str(item) for item in errors if item).lower()
-    for marker in INFRASTRUCTURE_ERROR_MARKERS:
-        if marker in text:
-            return "BrowserInfrastructureError"
-    return None
-
-
 async def wait_for_replay(solari: Solari, session_id: str) -> bool:
     for _ in range(10):
         try:
@@ -346,8 +317,7 @@ async def run_trial(solari: Solari, shop_url: str, mutations: tuple[str, ...] = 
     try:
         task = f"Open this exact URL: {target_url(shop_url, run_id, mutations)}. {TASK}"
         agent = Agent(task=task, llm=ChatOpenAI(model=MODEL), browser_session=browser)
-        history = await agent.run(max_steps=20)
-        error = history_infrastructure_error(history)
+        await agent.run(max_steps=20)
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
     finally:
