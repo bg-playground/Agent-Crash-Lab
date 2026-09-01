@@ -1,0 +1,53 @@
+{
+  "schema_version": "m2-evidence-v1",
+  "experiment": {
+    "milestone": "M1C",
+    "status": "CHARACTERIZED",
+    "model": "gpt-5",
+    "condition": "review_rollback",
+    "valid_trials": 20,
+    "invalid_infrastructure_attempts": 0,
+    "recoveries": 18,
+    "failures": 2,
+    "recovery_rate": 0.9,
+    "failure_rate": 0.1,
+    "failure_classes": {
+      "incomplete_at_shipping": 2
+    },
+    "failure_probability_wilson_95": [0.028, 0.301],
+    "frozen_implementation_commit": "d45a0b66bdf5e6441408513987a655e19978c26b",
+    "interpretation_scope": "This is a finite-sample characterization for the frozen agent/task/environment configuration, not a universal model reliability guarantee."
+  },
+  "oracle": {
+    "source": "server_authoritative_state",
+    "agent_self_report_is_oracle": false
+  },
+  "replay_contract": {
+    "availability_confirmed_during_live_run": true,
+    "signed_replay_urls_committed": false,
+    "note": "Replay evidence was confirmed during the live run. Credential-bearing replay references are intentionally excluded from committed evidence."
+  },
+  "historical_retention_note": "The live M1C runner did not durably persist the complete per-trial evidence contract. M2 does not reconstruct missing fields. Fields not preserved in the retained record are explicitly marked unavailable.",
+  "trials": [
+    {"ordinal":1,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":2,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":3,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":4,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":5,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":6,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":7,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":8,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":9,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":10,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":11,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":12,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":13,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":14,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":15,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":16,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":17,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":18,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":19,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"unavailable","failure_class":"unavailable","final_state":null,"events":null,"replay_available":"unavailable","agent_browser_error_status":"unavailable","retention_status":"not_retained"},
+    {"ordinal":20,"perturbation":"review_rollback","run_fingerprint":null,"objective_outcome":"PASS","failure_class":"passed","final_state":{"stage":"review","payment_submitted":false,"shipping":"standard"},"events":["product_added","cart_rendered","shipping_opened","standard_shipping_selected","review_rollback","cart_rendered","shipping_opened","shipping_required","shipping_required","shipping_required","shipping_required","shipping_required","shipping_required","standard_shipping_selected","review_reached"],"replay_available":true,"agent_browser_error_status":"no_terminal_transport_failure_observed","retention_status":"partially_retained"}
+  ]
+}
