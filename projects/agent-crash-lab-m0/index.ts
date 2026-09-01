@@ -32,7 +32,7 @@ const TARGET_HTML = `<!doctype html>
     <div>
       <h2>Before you continue</h2>
       <p>Review our updated shopping preferences.</p>
-      <button onclick="dismissModal()">Continue</button>
+      <button id="modal-continue" onclick="dismissModal()">Continue</button>
     </div>
   </div>
 
@@ -40,23 +40,28 @@ const TARGET_HTML = `<!doctype html>
     const params = new URLSearchParams(location.search)
     const seed = Number(params.get('seed') || '0')
 
-    // Deterministic mutation: seed 48291 injects an unexpected modal containing
-    // a second visible button with the same semantic label as the target action.
+    // Deterministic mutation: seed 48291 introduces an unexpected modal while
+    // the underlying primary action's label drifts from "Continue" to
+    // "Proceed to shipping". A brittle policy that keys only on the old label
+    // now clicks the modal action instead of completing the intended task.
     if (seed === ${FAILURE_SEED}) {
+      document.querySelector('#primary').textContent = 'Proceed to shipping'
       document.querySelector('#modal').hidden = false
-      document.body.dataset.mutations = 'unexpected-modal+duplicate-action-label'
+      document.body.dataset.mutations = 'unexpected-modal+primary-label-drift'
     } else {
       document.body.dataset.mutations = 'none'
     }
 
     function dismissModal() {
       document.querySelector('#modal').hidden = true
+      document.body.dataset.lastAction = 'dismissed-modal'
     }
 
     function completeTask() {
       document.querySelector('#status').textContent = 'Shipping step reached. Stop before payment.'
       document.querySelector('#primary').disabled = true
       document.body.dataset.taskComplete = 'true'
+      document.body.dataset.lastAction = 'completed-task'
     }
   </script>
 </body>
@@ -66,6 +71,8 @@ type Trial = {
   label: string
   seed: number
   passed: boolean
+  mutations: string
+  lastAction?: string
   sessionId: string
   replayUrl?: string
   error?: string
@@ -87,17 +94,22 @@ async function runTrial(solari: Solari, targetUrl: string, label: string, seed: 
   const browser = await solari.launch({ recording: true })
   const sessionId = browser.id
   let passed = false
+  let mutations = "unknown"
+  let lastAction: string | undefined
   let error: string | undefined
 
   try {
     const page = await browser.newPage()
     await page.goto(`${targetUrl}?seed=${seed}`, { waitUntil: "networkidle" })
 
+    mutations = (await page.locator("body").getAttribute("data-mutations")) ?? "unknown"
+
     // M0 deliberately uses a brittle computer-use policy. The point of this
     // milestone is not agent intelligence; it is proving Crash Lab can turn a
     // passing workflow into a deterministic, reproducible failure.
     await page.getByRole("button", { name: "Continue", exact: true }).click()
     passed = (await page.locator("body").getAttribute("data-task-complete")) === "true"
+    lastAction = (await page.locator("body").getAttribute("data-last-action")) ?? undefined
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
   } finally {
@@ -105,11 +117,13 @@ async function runTrial(solari: Solari, targetUrl: string, label: string, seed: 
   }
 
   const replayUrl = await waitForReplay(solari, sessionId)
-  return { label, seed, passed, sessionId, replayUrl, error }
+  return { label, seed, passed, mutations, lastAction, sessionId, replayUrl, error }
 }
 
 function printTrial(trial: Trial): void {
   console.log(`${trial.passed ? "PASS" : "FAIL"}  ${trial.label}  seed=${trial.seed}`)
+  console.log(`      mutations=${trial.mutations}`)
+  if (trial.lastAction) console.log(`      lastAction=${trial.lastAction}`)
   console.log(`      session=${trial.sessionId}`)
   if (trial.replayUrl) console.log(`      replay=${trial.replayUrl}`)
   if (trial.error) console.log(`      error=${trial.error.split("\n")[0]}`)
@@ -142,12 +156,19 @@ async function main(): Promise<void> {
     printTrial(mutatedA)
     printTrial(mutatedB)
 
-    const reproduced = baseline.passed && !mutatedA.passed && !mutatedB.passed
+    const sameMutation =
+      mutatedA.mutations === "unexpected-modal+primary-label-drift" &&
+      mutatedB.mutations === mutatedA.mutations
+    const sameFailureAction =
+      mutatedA.lastAction === "dismissed-modal" && mutatedB.lastAction === mutatedA.lastAction
+    const reproduced =
+      baseline.passed && !mutatedA.passed && !mutatedB.passed && sameMutation && sameFailureAction
+
     console.log(`\nM0 ${reproduced ? "PROVED" : "NOT PROVED"}`)
     console.log(
       reproduced
-        ? `Baseline passes; seed ${FAILURE_SEED} fails twice with the same deterministic mutation.`
-        : "Expected one passing baseline and two failing seeded reproductions.",
+        ? `Baseline passes; seed ${FAILURE_SEED} fails twice under the same mutation and wrong-action outcome.`
+        : "Expected one passing baseline and two matching seeded failure reproductions.",
     )
 
     if (!reproduced) process.exitCode = 1
