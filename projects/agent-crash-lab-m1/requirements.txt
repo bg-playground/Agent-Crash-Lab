@@ -1,0 +1,4 @@
+browser-use==0.13.8
+solari-browser
+solari-sandbox
+httpx>=0.27,<1
