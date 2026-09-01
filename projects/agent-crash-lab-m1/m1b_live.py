@@ -198,6 +198,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         run_id = query.get('run_id', [''])[0]
+        if parsed.path == '/' and query.get('oracle', [''])[0] == 'state':
+            self._json(200, serialize(get_state(run_id)))
+            return
         if parsed.path == '/':
             mutation_set = set(filter(None, query.get('mutations', [''])[0].split(',')))
             if not mutation_set.issubset(PERTURBATIONS):
@@ -293,7 +296,8 @@ def state_url(base: str, run_id: str) -> str:
     parts = urlsplit(base)
     query = dict(parse_qsl(parts.query))
     query["run_id"] = run_id
-    return urlunsplit((parts.scheme, parts.netloc, "/state", urlencode(query), ""))
+    query["oracle"] = "state"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), ""))
 
 
 async def wait_for_replay(solari: Solari, session_id: str) -> bool:
