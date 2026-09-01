@@ -173,16 +173,9 @@ async def wait_for_replay(solari: Solari, session_id: str) -> bool:
     return False
 
 
-async def read_oracle(base: str, run_id: str) -> dict:
-    url = f"{base}&{urlencode({'run_id': run_id})}" if "?" in base else f"{base}?{urlencode({'run_id': run_id})}"
-    async with httpx.AsyncClient(timeout=20) as client:
-        response = await client.get(url.replace("?pt_token=", "/state?pt_token=") if "/state" not in url else url)
-        response.raise_for_status()
-        return response.json()
-
-
 def state_url(base: str, run_id: str) -> str:
-    from urllib.parse import urlsplit, urlunsplit, parse_qsl
+    from urllib.parse import parse_qsl, urlsplit, urlunsplit
+
     parts = urlsplit(base)
     query = dict(parse_qsl(parts.query))
     query["run_id"] = run_id
@@ -275,7 +268,9 @@ async def main() -> None:
                 args=["-c", f"nohup python3 /tmp/chaosshop_m1.py >/tmp/chaosshop-m1.log 2>&1 &"],
             )
             preview = await sandbox.preview_url(PORT)
-            shop_url = preview.url
+            if not isinstance(preview, dict) or not isinstance(preview.get("url"), str):
+                raise RuntimeError(f"Unexpected Solari preview_url response: {preview!r}")
+            shop_url = preview["url"]
             print("Agent Crash Lab — M1 real-agent chaos engine")
             print(f"model={MODEL}")
             print("target=<Solari preview URL redacted>")
@@ -287,9 +282,7 @@ async def main() -> None:
                     raise RuntimeError("M1 gate stopped: autonomous baseline did not pass")
 
                 failing: Trial | None = None
-                campaign = [
-                    (mutation,) for mutation in MUTATIONS
-                ] + list(itertools.combinations(MUTATIONS, 2))
+                campaign = [(mutation,) for mutation in MUTATIONS] + list(itertools.combinations(MUTATIONS, 2))
 
                 for index, mutations in enumerate(campaign, start=1):
                     trial = await run_trial(solari, shop_url, tuple(mutations))
