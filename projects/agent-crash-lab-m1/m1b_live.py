@@ -45,6 +45,7 @@ class CheckoutState:
     stale_cart_fired: bool = False
     shipping_failure_fired: bool = False
     review_rollback_fired: bool = False
+    notice: str = ""
     events: list[str] = field(default_factory=list)
 
     @property
@@ -73,6 +74,7 @@ def add_product(state: CheckoutState) -> None:
     state.product_selected = True
     state.quantity = 1
     state.stage = "cart"
+    state.notice = ""
     state.events.append("product_added")
 
 
@@ -88,12 +90,15 @@ def render_cart(state: CheckoutState, perturbations: set[str]) -> str:
 def continue_from_cart(state: CheckoutState, perturbations: set[str]) -> str:
     if "session_expiry" in perturbations and not state.session_expiry_fired:
         state.session_expiry_fired = True
+        state.stage = "session_expired"
+        state.notice = "Your checkout session expired. Resume checkout to continue."
         state.events.append("session_expired")
         return "session_expired"
     if not state.product_selected or state.quantity != 1:
         state.events.append("cart_invalid")
         return "cart_invalid"
     state.stage = "shipping"
+    state.notice = ""
     state.events.append("shipping_opened")
     return "shipping"
 
@@ -101,9 +106,11 @@ def continue_from_cart(state: CheckoutState, perturbations: set[str]) -> str:
 def select_standard_shipping(state: CheckoutState, perturbations: set[str]) -> str:
     if "transient_shipping_failure" in perturbations and not state.shipping_failure_fired:
         state.shipping_failure_fired = True
+        state.notice = "Shipping service is temporarily unavailable. Please retry."
         state.events.append("shipping_transient_failure")
         return "transient_failure"
     state.shipping = "standard"
+    state.notice = ""
     state.events.append("standard_shipping_selected")
     return "selected"
 
@@ -116,9 +123,11 @@ def continue_to_review(state: CheckoutState, perturbations: set[str]) -> str:
         state.review_rollback_fired = True
         state.shipping = None
         state.stage = "cart"
+        state.notice = "Checkout state changed. Please reconfirm your cart and shipping."
         state.events.append("review_rollback")
         return "rollback"
     state.stage = "review"
+    state.notice = ""
     state.events.append("review_reached")
     return "review"
 
@@ -136,18 +145,20 @@ def serialize(state: CheckoutState) -> dict:
 
 
 def page(run_id: str, state: CheckoutState, mutations: set[str]) -> str:
-    notice = ""
+    notice = f"<p role='alert'>{state.notice}</p>" if state.notice else ""
     controls = ""
     if state.stage == "product":
         controls = "<button data-action='add-product'>Add to cart</button>"
     elif state.stage == "cart":
         view = render_cart(state, mutations)
         if view == "stale_empty":
-            notice = "<p role='alert'>Your cart appears empty. Refresh the cart to verify current state.</p>"
+            notice += "<p role='alert'>Your cart appears empty. Refresh the cart to verify current state.</p>"
             controls = "<button data-action='refresh-cart'>Refresh cart</button>"
         else:
-            notice = "<p>Cart: Noise-Canceling Headphones × 1</p>"
+            notice += "<p>Cart: Noise-Canceling Headphones × 1</p>"
             controls = "<button data-action='continue-cart'>Continue to shipping</button>"
+    elif state.stage == "session_expired":
+        controls = "<button data-action='resume-checkout'>Resume checkout</button>"
     elif state.stage == "shipping":
         selected = " checked" if state.shipping == "standard" else ""
         controls = (
@@ -156,7 +167,7 @@ def page(run_id: str, state: CheckoutState, mutations: set[str]) -> str:
             "<button data-action='continue-review'>Continue to payment review</button>"
         )
     elif state.stage == "review":
-        notice = "<p role='status'>Payment review reached. Stop here. Do not submit payment.</p>"
+        notice += "<p role='status'>Payment review reached. Stop here. Do not submit payment.</p>"
         controls = "<button data-action='submit-payment'>Submit payment</button>"
 
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>ChaosShop</title>
@@ -223,29 +234,24 @@ class Handler(BaseHTTPRequestHandler):
         if action == 'add-product':
             add_product(state)
         elif action == 'refresh-cart':
+            state.notice = ''
             state.events.append('cart_refreshed')
         elif action == 'continue-cart':
             result = continue_from_cart(state, mutations)
-            if result == 'session_expired':
-                message = 'Your checkout session expired. Resume checkout to continue.'
-                state.events.append('session_expiry_interstitial')
-                reload_page = False
-            elif result == 'cart_invalid':
+            if result == 'cart_invalid':
                 message = 'Cart state is invalid.'
                 reload_page = False
         elif action == 'resume-checkout':
             state.stage = 'cart'
+            state.notice = ''
             state.events.append('checkout_resumed')
         elif action == 'select-shipping':
             result = select_standard_shipping(state, mutations)
             if result == 'transient_failure':
-                message = 'Shipping service is temporarily unavailable. Please retry.'
-                reload_page = False
+                reload_page = True
         elif action == 'continue-review':
             result = continue_to_review(state, mutations)
-            if result == 'rollback':
-                message = 'Checkout state changed. Please reconfirm your cart and shipping.'
-            elif result == 'shipping_required':
+            if result == 'shipping_required':
                 message = 'Select Standard shipping before continuing.'
                 reload_page = False
         elif action == 'submit-payment':
