@@ -78,6 +78,7 @@ class M2EvidenceContractTests(unittest.TestCase):
             "pt_token=redacted",
             "https://example.preview.getsolari.com/",
             "wss://browser.example.invalid/devtools",
+            "signed_replay_url=https://replay.example.invalid/capability",
             "SOLARI_API_KEY=redacted",
             "OPENAI_API_KEY=redacted",
         )
@@ -85,6 +86,9 @@ class M2EvidenceContractTests(unittest.TestCase):
             with self.subTest(example=example):
                 with self.assertRaises(EvidenceContractError):
                     assert_secret_free_text(example)
+
+    def test_safe_replay_policy_metadata_is_allowed(self) -> None:
+        assert_secret_free_text('"signed_replay_urls_committed": false')
 
     def test_artifact_text_is_secret_free(self) -> None:
         assert_secret_free_text(ARTIFACT.read_text(encoding="utf-8"))
