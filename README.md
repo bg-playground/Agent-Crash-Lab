@@ -1,91 +1,109 @@
-# Solari Cookbook
+# Agent Crash Lab
 
-Short, runnable examples for [Solari](https://getsolari.com) — cloud browsers,
-sandboxes, and desktops behind one API key.
+> **Your AI agent passed the demo. Crash Lab finds out whether it survives reality.**
 
-Every example in this repo is a complete program you can run in under a minute.
-They are deliberately small: one idea each, no framework, no scaffolding to read
-past. Copy one into your project and change the parts you care about.
+Agent Crash Lab is a chaos-engineering and reliability-testing project for autonomous computer-use agents, built on Solari. It creates deterministic adversarial web environments, runs a real autonomous browser agent in recorded Solari Browser sessions, and judges outcomes with server-authoritative state rather than trusting the agent's own final message.
 
-## Examples
+## The result
 
-### Cloud browser
+**Same autonomous agent. Same task. Same deterministic rollback perturbation. Twenty valid runs: 18 recoveries, 2 objective failures.**
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [browser-quickstart-ts](examples/browser-quickstart-ts) | TypeScript | Launch a browser, open a page, read it |
-| [browser-quickstart-py](examples/browser-quickstart-py) | Python | Launch a browser, open a page, read it |
-| [browser-stealth-proxy-ts](examples/browser-stealth-proxy-ts) | TypeScript | Stealth mode + residential proxy egress |
-| [browser-profiles-ts](examples/browser-profiles-ts) | TypeScript | Log in once, reuse the session forever |
-| [browser-session-recording-py](examples/browser-session-recording-py) | Python | Record a session, download the replay |
+Both objective failures ended `incomplete_at_shipping`. The observed failure rate was **10.0%**; the two-sided 95% Wilson interval for the underlying failure probability in this frozen setup was **2.8%–30.1%**.
 
-### Sandbox
+That is intentionally a finite-sample characterization of one frozen agent/task/environment configuration — not a universal model reliability claim.
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [sandbox-quickstart-ts](examples/sandbox-quickstart-ts) | TypeScript | Run a command, write and read files |
-| [sandbox-code-interpreter-py](examples/sandbox-code-interpreter-py) | Python | Stateful Python kernel for agent loops |
-| [sandbox-port-preview-ts](examples/sandbox-port-preview-ts) | TypeScript | Expose a server in the VM on a public URL |
+## Start here
 
-### Desktop
+| Reviewer path | What it contains |
+| --- | --- |
+| [Agent Crash Lab project](projects/agent-crash-lab-m1/) | Architecture, experiment history, validation commands, repository map |
+| [Reviewer brief](projects/agent-crash-lab-m1/SUBMISSION.md) | Fastest path through the challenge submission and why the result matters |
+| [Frozen M1C protocol](projects/agent-crash-lab-m1/M1C_FROZEN_SPEC.md) | The 20-valid-trial reliability protocol frozen before live execution |
+| [Canonical evidence](projects/agent-crash-lab-m1/evidence/m1c_characterization.json) | Sanitized machine-readable M1C result and explicit evidence-retention gaps |
+| [M2 evidence/reporting spec](projects/agent-crash-lab-m1/M2_FROZEN_SPEC.md) | Frozen rules for converting the live result into reviewer evidence |
 
-| Example | Language | What it shows |
-| --- | --- | --- |
-| [desktop-computer-use-py](examples/desktop-computer-use-py) | Python | Screenshot, click, and type on a Linux GUI |
+The standalone HTML evidence report is generated deterministically from the canonical sanitized artifact:
 
-## Running an example
-
-Each directory is self-contained.
-
-```bash
-git clone https://github.com/solari-sdk/solari-cookbook.git
-cd solari-cookbook/examples/browser-quickstart-ts
-
-npm install                          # or: pip install -r requirements.txt
-export SOLARI_API_KEY=slr_live_...   # grab one at console.getsolari.com
-npm start                            # or: python main.py
+```powershell
+cd projects\agent-crash-lab-m1
+python m2_report.py
+Start-Process .\evidence\m1c_report.html
 ```
 
-One `slr_live_` key works across browsers, sandboxes, and desktops, and every
-product bills to the same balance.
+No live Solari, OpenAI, browser-use, or network access is required to generate the M2 report from the committed evidence artifact.
 
-## Which product do I want?
+## What Crash Lab tests
 
-- **Cloud browser** — you need a *web page*: scraping, testing, filling forms,
-  anything Playwright or Puppeteer would do locally. Adds stealth, managed
-  proxies, captcha solving, profiles, and session recording.
-- **Sandbox** — you need to *run code*: an LLM's Python, an untrusted build, a
-  data job. A headless microVM that boots from a snapshot in about a second.
-- **Desktop** — you need a *screen*: computer-use agents, GUI apps, anything
-  that has to be clicked. A sandbox plus X11 and a live VNC stream.
+A normal agent demo asks whether the agent can complete a task once. Crash Lab asks a harder question: **does the same agent continue to behave reliably when the environment changes in controlled, reproducible ways?**
 
-## Gotchas the examples encode
+The project progressed through increasingly realistic experiments:
 
-Things that cost you an afternoon if you meet them cold:
+1. **M0 — harness proof.** A deterministic UI mutation reproducibly broke a deliberately brittle Playwright policy.
+2. **M1A — real autonomous agent.** A browser-use/OpenAI agent survived the frozen initial mutation campaign; the correct result was recorded as **inconclusive** rather than tuning the test until it failed.
+3. **M1B — state-machine perturbations.** A deterministic `review_rollback` condition produced divergent confirmation outcomes: one objective failure and one recovery. It therefore did **not** prove a deterministic breaker.
+4. **M1C — reliability characterization.** The exact condition, task, and agent configuration were frozen and repeated until exactly 20 valid trials were collected: **18 recoveries, 2 failures**.
+5. **M2 — evidence.** The completed result was converted into a sanitized machine-readable artifact and deterministic offline HTML report without changing the experiment.
 
-- **TypeScript: call `await solari.close()`.** The browser client keeps a
-  loopback proxy open for connection retries. Skip the close and your script
-  prints its output and then hangs forever instead of exiting.
-- **Recording is per session, not per account.** Pass `recording: true` when you
-  create the session; without it the replay endpoint 404s forever. The upload is
-  async after release, so poll for ~30s before giving up.
-- **Sandbox commands are not shell-interpreted.** `run("ls -la")` looks for a
-  binary named `ls -la`. Put argv in `args`, or run `sh -c` explicitly.
-- **`kill()`, not `close()`, ends a VM.** `close()` drops your local control
-  channel; the VM keeps running until its idle timeout.
-- **`timeoutMs` is a rolling idle window**, not a hard deadline — it resets on
-  every use.
+The interesting finding is therefore not “we found a trick that always breaks an agent.” It is that **the same deterministic disruption can produce different autonomous outcomes**, and those outcomes can be characterized objectively rather than hidden behind a successful single-run demo.
 
-## Links
+## Architecture
 
-- Docs — [docs.getsolari.com](https://docs.getsolari.com)
-- Console — [console.getsolari.com](https://console.getsolari.com)
-- Changelog — [changelog.getsolari.com](https://changelog.getsolari.com)
-- Questions — [hello@getsolari.com](mailto:hello@getsolari.com)
+```text
+Solari Sandbox
+  -> deterministic ChaosShop target
+  -> authoritative task state + event oracle
+  -> Solari preview capability
 
-## Contributing
+Solari Browser (recording enabled)
+  -> CDP connection
+  -> browser-use autonomous agent
+  -> provider-backed LLM
 
-New examples are welcome. Keep them small, make them run end-to-end against the
-real API, and put anything surprising in a comment right where it bites.
+Agent Crash Lab
+  -> frozen adversarial campaign
+  -> objective PASS / FAIL classification
+  -> minimization / repeated reliability characterization
+  -> sanitized evidence contract
+  -> deterministic offline evidence report
+```
 
-MIT licensed.
+Solari provides the remote browser/sandbox infrastructure and session recording. browser-use provides the autonomous agent loop. Agent Crash Lab provides the adversarial state machine, experiment freeze rules, server-authoritative oracle, infrastructure-vs-agent failure classification, reliability characterization, sanitization, and evidence presentation.
+
+## Experiment integrity
+
+The project deliberately treats evaluation methodology as part of the product:
+
+- perturbations and acceptance rules are frozen before observing the result;
+- agent/task settings are not tuned after a failure or recovery is observed;
+- the server-side state machine, not agent self-report, decides PASS/FAIL;
+- infrastructure-invalid attempts are excluded from agent-failure counts;
+- M1C required exactly 20 valid trials with no early stopping;
+- missing historical per-trial evidence remains visibly unavailable rather than being guessed;
+- credential-bearing Solari preview, CDP/WS, session/sandbox, API-key, and signed replay capabilities are not committed as evidence.
+
+## Validate locally
+
+From `projects/agent-crash-lab-m1`:
+
+```powershell
+python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py
+```
+
+Current combined offline gate: **41 tests**.
+
+Live agent experiments additionally require Python 3.11+, the dependencies in `requirements.txt`, and locally configured `SOLARI_API_KEY` and `OPENAI_API_KEY`. Never commit secrets or capability URLs.
+
+## Repository layout
+
+This repository began as a fork of the public Solari cookbook for the Solari engineering challenge. The upstream cookbook examples are intentionally retained under [`examples/`](examples/) for provenance and reference.
+
+Agent Crash Lab lives under [`projects/`](projects/):
+
+- [`projects/agent-crash-lab-m0/`](projects/agent-crash-lab-m0/) — initial harness proof;
+- [`projects/agent-crash-lab-m1/`](projects/agent-crash-lab-m1/) — autonomous-agent experiments, frozen protocols, M1C characterization, evidence contract, tests, and reviewer documentation.
+
+For the shortest review, continue with the **[Agent Crash Lab reviewer brief](projects/agent-crash-lab-m1/SUBMISSION.md)**.
+
+## Attribution
+
+Agent Crash Lab was developed in a fork of the Solari cookbook as a real use case for Solari Browsers and Sandboxes. The original cookbook examples and MIT license remain in this repository. Solari project documentation is available from the upstream Solari project.
