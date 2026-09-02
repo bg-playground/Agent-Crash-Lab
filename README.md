@@ -1,5 +1,7 @@
 # Agent Crash Lab
 
+![Agent Crash Lab — controlled experiment, deterministic perturbation, and evidence-based reliability characterization](docs/assets/agent-crash-lab-readme-hero.png)
+
 > **Your AI agent passed the demo. Crash Lab finds out whether it survives reality.**
 
 Agent Crash Lab is a chaos-engineering and reliability-testing project for autonomous computer-use agents, built on Solari. It creates deterministic adversarial web environments, runs a real autonomous browser agent in recorded Solari Browser sessions, and judges outcomes with server-authoritative state rather than trusting the agent's own final message.
