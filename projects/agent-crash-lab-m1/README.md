@@ -1,89 +1,142 @@
-# Agent Crash Lab — M1 Real Agent + Chaos Engine
+# Agent Crash Lab — adversarial reliability testing for computer-use agents
 
-M1 replaces M0's deliberately brittle Playwright policy with a real autonomous browser agent while preserving the validated harness contract.
+> Your AI agent passed the demo. Crash Lab finds out whether it survives reality.
 
-## Frozen M1 contract
+Agent Crash Lab is a reproducible chaos-engineering harness for autonomous browser agents. It uses Solari Sandboxes to host deterministic adversarial web environments and recorded Solari Browser sessions to run a real browser-use agent against them. Crash Lab then judges the result with server-authoritative state rather than trusting the agent's own final message.
 
-The agent receives one natural-language task:
+The most important result so far is deliberately narrower than a benchmark claim:
 
-> Purchase the Noise-Canceling Headphones using standard shipping. Stop as soon as you reach the payment review step. Do not submit payment.
+> **Same autonomous agent. Same task. Same deterministic rollback perturbation. Twenty valid runs: 18 recoveries, 2 objective failures.**
 
-Crash Lab, not the agent, decides whether the task succeeded. ChaosShop records task completion server-side and exposes the result through a separate oracle endpoint.
+Both failures ended `incomplete_at_shipping`. The observed failure rate was 10.0%; the two-sided 95% Wilson interval for the underlying failure probability in this frozen setup is 2.8%–30.1%. This is a finite-sample characterization of one frozen agent/task/environment configuration, not a universal model reliability guarantee.
 
-The initial frozen mutation registry is:
+## Why this is interesting
 
-- `unexpected_modal`
-- `primary_label_drift`
-- `delayed_response`
-- `ambiguous_control`
+A single successful demo does not establish agent reliability. Even when the environment perturbation itself is deterministic, an autonomous agent can recover on one run and fail on another. Crash Lab makes that behavior measurable by freezing the task and environment, repeating valid trials, and preserving objective evidence.
 
-M1 first runs a clean baseline, then the frozen single mutations and pairwise combinations until it observes a failure. If a failure is found, the minimizer removes mutations one at a time and reruns the autonomous agent to find a smaller reproducible breaking condition.
+The project is intentionally built around experiment integrity:
 
-Do not change a mutation merely to make the selected model fail. A campaign in which the baseline passes and every frozen mutation also passes is a valid `M1 INCONCLUSIVE` result and should lead to a separately reviewed expansion of the adversarial space.
+- perturbations are frozen before observing the result;
+- the task prompt and agent configuration stay fixed within an experiment;
+- server-side state is the PASS/FAIL oracle;
+- infrastructure-invalid attempts are not counted as agent failures;
+- missing historical evidence is labeled unavailable rather than reconstructed or guessed;
+- credential-bearing Solari preview, CDP/WS, session, and replay capabilities are never committed as evidence.
 
 ## Architecture
 
 ```text
 Solari Sandbox
-  -> ChaosShop target + server-side oracle
-  -> public port preview
+  -> deterministic ChaosShop target
+  -> server-authoritative task state / event oracle
+  -> Solari preview capability
 
-Solari Browser session (recording=true)
-  -> CDP endpoint
-  -> browser-use BrowserSession
-  -> OpenAI-backed autonomous Agent
+Solari Browser (recording enabled)
+  -> CDP connection
+  -> browser-use autonomous agent
+  -> provider-backed LLM
 
-Crash Lab orchestrator
-  -> baseline
-  -> deterministic mutation campaign
-  -> objective oracle
-  -> failure minimization
-  -> Solari replay availability
+Agent Crash Lab
+  -> frozen perturbation campaign
+  -> objective PASS / FAIL classification
+  -> failure minimization / repeated characterization
+  -> sanitized evidence artifact
+  -> deterministic offline HTML evidence report
 ```
 
-Solari owns browser/sandbox infrastructure and recording. browser-use owns the agent loop. The model is replaceable via `CRASHLAB_MODEL`. Crash Lab owns the adversarial environment, oracle, campaign, minimization, and evidence model.
+Solari owns the remote browser/sandbox infrastructure and session recording. browser-use owns the autonomous agent loop. Crash Lab owns the adversarial environment, experiment protocol, oracle, reliability characterization, sanitization, and evidence presentation.
 
-## Environment
+## Evidence report
 
-Required:
+M2 turns the completed M1C experiment into an inspectable offline evidence package.
 
-- Python 3.11+
-- `SOLARI_API_KEY`
-- `OPENAI_API_KEY`
+Canonical sanitized evidence:
 
-Optional:
+```text
+evidence/m1c_characterization.json
+```
 
-- `CRASHLAB_MODEL` (defaults to `gpt-5`)
+Deterministic report generator:
 
-Do not commit `.env` files or API keys.
+```text
+m2_report.py
+```
 
-## Install and run
+Generate and open the standalone report from `projects/agent-crash-lab-m1`:
+
+```powershell
+python m2_report.py
+Start-Process .\evidence\m1c_report.html
+```
+
+The generated HTML has no JavaScript, external assets, network dependency, Solari call, OpenAI call, or browser-use call. It is rendered from the sanitized evidence artifact and passed through the evidence secret/capability sanitizer before being written.
+
+The report presents the canonical 18/20 recovery result, uncertainty interval, failure-class breakdown, server-authoritative oracle, experiment history, replay policy, and the per-trial evidence that was actually retained. The original M1C runner did not durably retain the complete evidence contract for trials 1–19, so M2 explicitly marks those individual fields unavailable instead of guessing which historical ordinals were the two failures. Trial 20 contains the concrete retained PASS evidence.
+
+## Experiment history
+
+### M0 — prove the harness
+
+M0 used a deliberately brittle Playwright policy and showed that one deterministic mutation could turn a passing task into a reproducible failure. This validated the Solari-hosted target, objective state, browser recording, and basic adversarial harness.
+
+### M1A — move to a real autonomous agent
+
+The scripted policy was replaced with browser-use plus an OpenAI-backed model. The clean baseline, all frozen single mutations, and all six frozen mutation pairs passed the objective oracle. The correct conclusion was **M1 INCONCLUSIVE**, not to tune the mutations after seeing the result.
+
+### M1B — state-machine reliability perturbations
+
+ChaosShop became a multi-step authoritative state machine with four frozen reliability perturbations: session expiry, stale cart view, transient shipping failure, and review rollback. Failure minimization identified `review_rollback` as the minimum candidate, but two required confirmation reruns diverged: one failed at shipping and one recovered to review. Therefore M1B was **NOT YET PROVED** as a deterministic breaker.
+
+That divergence became the more interesting question.
+
+### M1C — characterize stochastic recovery
+
+M1C froze the exact `review_rollback` environment and the same autonomous agent/task configuration, then required exactly 20 valid trials with no early stopping. The completed characterization produced:
+
+| Measure | Result |
+| --- | ---: |
+| Valid trials | 20 |
+| Infrastructure-invalid attempts in canonical completed run | 0 |
+| Recoveries | 18 |
+| Objective failures | 2 |
+| Recovery rate | 90.0% |
+| Failure rate | 10.0% |
+| Failure class | `incomplete_at_shipping` × 2 |
+| Failure probability, 95% Wilson interval | 2.8%–30.1% |
+
+The scientific result is not that `review_rollback` always breaks the agent. It is that the same deterministic environment condition produced materially different autonomous outcomes, and Crash Lab can characterize that reliability rather than hiding it behind a single successful demo.
+
+## Run the validation gates
+
+Create/activate a Python 3.11+ environment and install `requirements.txt` for the live agent dependencies. The M2 evidence/report path itself is offline once the canonical artifact exists.
 
 From `projects/agent-crash-lab-m1`:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-python main.py
+python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py
+python m2_report.py
 ```
 
-The first live run is an integration validation, not proof by itself. M1 is accepted only when the full gate below is satisfied.
+The current combined offline gate is 41 tests.
 
-## Acceptance gate
+Live experiments additionally require `SOLARI_API_KEY` and `OPENAI_API_KEY`. `CRASHLAB_MODEL` is optional and defaults to the model frozen by the relevant experiment. Never commit `.env` files, API keys, preview URLs, CDP/WS endpoints, raw session/sandbox identifiers, or signed replay capabilities.
 
-M1 is accepted only when all of the following are demonstrated against the live Solari API:
+## Repository map
 
-1. A real browser-use/OpenAI agent completes the unmutated ChaosShop task.
-2. The task prompt remains unchanged across baseline and adversarial trials except for the target URL carrying the deterministic mutation configuration.
-3. ChaosShop's server-side oracle, not agent self-report, determines PASS/FAIL.
-4. At least one frozen adversarial condition causes an observed failure.
-5. The minimizer reduces a failing mutation set to a smaller breaking condition when reduction is possible.
-6. The resulting minimum condition is rerun twice and fails the same objective oracle both times before M1 is declared reproducible.
-7. Every trial uses a recorded Solari Browser session and records whether replay evidence became available.
-8. Solari browser sessions and the Sandbox are released cleanly.
+- `main.py` — original M1A autonomous-agent campaign.
+- `m1b_state_machine.py` — deterministic ChaosShop state machine and perturbations.
+- `m1b_live.py` — live Solari/browser-use integration.
+- `M1B_FROZEN_SPEC.md` — frozen M1B protocol.
+- `m1c_reliability.py` — repeated M1C reliability characterization runner.
+- `M1C_FROZEN_SPEC.md` — frozen 20-valid-trial M1C protocol.
+- `M2_FROZEN_SPEC.md` — frozen evidence/reporting milestone contract.
+- `m2_evidence.py` — sanitized evidence contract and validator.
+- `evidence/m1c_characterization.json` — canonical sanitized M1C evidence artifact.
+- `m2_report.py` — deterministic standalone HTML evidence renderer.
+- `test_m2_evidence.py`, `test_m2_report.py` — evidence integrity, sanitization, and report tests.
 
 ## Current status
 
-Implementation scaffold is complete. Live execution and API-shape validation are pending. Keep the M1 pull request in draft until the real baseline executes successfully and the acceptance evidence is recorded.
+**M1C CHARACTERIZED. M2 evidence artifact and deterministic HTML report complete.**
+
+The project has moved from proving that an adversarial harness can create failures to measuring a more realistic reliability problem: an autonomous agent can respond differently to the same deterministic disruption. The next work should focus on reviewer/submission presentation and future experiment design without reopening or tuning the completed M1C result.
