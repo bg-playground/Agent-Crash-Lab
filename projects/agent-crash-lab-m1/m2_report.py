@@ -89,13 +89,20 @@ h2 {{ margin-top: 2.2em; }}
 .fail {{ background: color-mix(in srgb, red 28%, transparent); }}
 .unknown {{ background: color-mix(in srgb, gray 20%, transparent); }}
 .note {{ border-left: 4px solid currentColor; padding: 10px 16px; opacity: .88; }}
-table {{ border-collapse: collapse; width: 100%; min-width: 1500px; font-size: .86rem; }}
-th, td {{ border-bottom: 1px solid #8885; padding: 9px 7px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }}
-th {{ position: sticky; top: 0; background: Canvas; }}
-th:nth-child(7), td:nth-child(7) {{ min-width: 330px; }}
-th:nth-child(9), td:nth-child(9) {{ min-width: 210px; }}
-th:nth-child(10), td:nth-child(10) {{ min-width: 135px; }}
-.table-wrap {{ overflow-x: auto; padding-bottom: 6px; }}
+table {{ border-collapse: collapse; width: max-content; min-width: 1900px; font-size: .86rem; table-layout: auto; }}
+th, td {{ border-bottom: 1px solid #8885; padding: 9px 10px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; }}
+th {{ position: sticky; top: 0; background: Canvas; white-space: nowrap; }}
+th:nth-child(1), td:nth-child(1) {{ min-width: 52px; }}
+th:nth-child(2), td:nth-child(2) {{ min-width: 140px; }}
+th:nth-child(3), td:nth-child(3) {{ min-width: 165px; }}
+th:nth-child(4), td:nth-child(4) {{ min-width: 105px; white-space: nowrap; }}
+th:nth-child(5), td:nth-child(5) {{ min-width: 155px; }}
+th:nth-child(6), td:nth-child(6) {{ min-width: 255px; }}
+th:nth-child(7), td:nth-child(7) {{ min-width: 650px; }}
+th:nth-child(8), td:nth-child(8) {{ min-width: 90px; white-space: nowrap; }}
+th:nth-child(9), td:nth-child(9) {{ min-width: 270px; }}
+th:nth-child(10), td:nth-child(10) {{ min-width: 160px; white-space: nowrap; }}
+.table-wrap {{ overflow-x: auto; padding-bottom: 8px; }}
 code {{ font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }}
 footer {{ margin-top: 50px; opacity: .72; }}
 </style>
