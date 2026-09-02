@@ -95,6 +95,10 @@ Current combined offline gate: **41 tests**.
 
 Live agent experiments additionally require Python 3.11+, the dependencies in `requirements.txt`, and locally configured `SOLARI_API_KEY` and `OPENAI_API_KEY`. Never commit secrets or capability URLs.
 
+## Built with AI
+
+Agent Crash Lab was developed with AI-assisted engineering, including implementation, test design, experiment review, debugging, documentation, and evidence presentation. AI accelerated the build; frozen protocols, objective server-side oracles, automated tests, and retained evidence were used to keep the experimental conclusions independently verifiable.
+
 ## Repository layout
 
 This repository began as a fork of the public Solari cookbook for the Solari engineering challenge. The upstream cookbook examples are intentionally retained under [`examples/`](examples/) for provenance and reference.
