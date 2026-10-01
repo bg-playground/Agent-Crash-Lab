@@ -4,12 +4,15 @@ import asyncio
 import os
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from browser_use import Agent, BrowserSession, ChatOpenAI
 from solari_browser import Solari
 from solari_sandbox import SandboxClient
+
+from model_version_log import ModelVersionHttpHook, ModelVersionLog, VersionChangePolicy
 
 PORT = 3000
 BASE_URL = "https://api.getsolari.com"
@@ -282,6 +285,8 @@ class Trial:
     events: tuple[str, ...]
     replay_available: bool
     error: str | None
+    # None when per-call model-version logging was not enabled for this trial.
+    model_version_valid: bool | None = None
 
 
 def target_url(base: str, run_id: str, mutations: tuple[str, ...]) -> str:
@@ -309,23 +314,68 @@ async def wait_for_replay(solari: Solari, session_id: str) -> bool:
     return False
 
 
-async def run_trial(solari: Solari, shop_url: str, mutations: tuple[str, ...] = ()) -> Trial:
+async def run_trial(
+    solari: Solari,
+    shop_url: str,
+    mutations: tuple[str, ...] = (),
+    *,
+    model_version_log_path: str | Path | None = None,
+    model_version_policy: VersionChangePolicy | str = VersionChangePolicy.RESTART,
+) -> Trial:
+    """Run one trial. Model-version logging is opt-in; the default path is unchanged.
+
+    With ``model_version_log_path`` set, every successful LLM HTTP call made by the
+    agent appends one record (returned model version, keyed by this trial's
+    run_id). Under ``restart`` a version change or missing version stops the agent
+    and surfaces as ``Trial.error`` (``ModelVersionChanged``/``ModelVersionMissing``),
+    which ``validate_trial`` treats as infrastructure-invalid, so the campaign
+    replaces the run. Under ``mark_invalid`` the agent keeps going and
+    ``Trial.model_version_valid`` is False.
+    """
+
     run_id = uuid.uuid4().hex
+    model_log: ModelVersionLog | None = None
+    llm_http_client: httpx.AsyncClient | None = None
+    agent_kwargs: dict = {}
+    if model_version_log_path is not None:
+        model_log = ModelVersionLog(model_version_log_path, run_id, policy=model_version_policy)
+        llm_http_client = ModelVersionHttpHook.async_client(model_log)
+
+        async def stop_on_version_violation() -> bool:
+            return model_log.restart_required
+
+        agent_kwargs["register_should_stop_callback"] = stop_on_version_violation
     session = await solari.sessions.create(recording=True)
     browser = BrowserSession(cdp_url=session.cdp_endpoint)
     error = None
     try:
         task = f"Open this exact URL: {target_url(shop_url, run_id, mutations)}. {TASK}"
-        agent = Agent(task=task, llm=ChatOpenAI(model=MODEL), browser_session=browser)
+        if llm_http_client is None:
+            llm = ChatOpenAI(model=MODEL)
+        else:
+            llm = ChatOpenAI(model=MODEL, http_client=llm_http_client)
+        agent = Agent(task=task, llm=llm, browser_session=browser, **agent_kwargs)
         await agent.run(max_steps=20)
+        if model_log is not None:
+            model_log.raise_if_restart_required()
     except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"
+        cause: BaseException = exc
+        if model_log is not None and model_log.violation is not None and model_log.restart_required:
+            # The agent may surface the requested stop as InterruptedError; report the cause.
+            cause = model_log.violation
+        error = f"{type(cause).__name__}: {cause}"
     finally:
         try:
             await browser.stop()
         except Exception:
             pass
+        if llm_http_client is not None:
+            await llm_http_client.aclose()
         await solari.sessions.release_and_wait(session.id)
+
+    model_version_valid: bool | None = None
+    if model_log is not None:
+        model_version_valid = bool(model_log.write_summary()["run_valid"])
 
     async with httpx.AsyncClient(timeout=20) as client:
         response = await client.get(state_url(shop_url, run_id))
@@ -338,6 +388,7 @@ async def run_trial(solari: Solari, shop_url: str, mutations: tuple[str, ...] = 
         events=tuple(state.get("events", [])),
         replay_available=await wait_for_replay(solari, session.id),
         error=error,
+        model_version_valid=model_version_valid,
     )
 
 

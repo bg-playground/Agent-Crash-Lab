@@ -113,11 +113,11 @@ Create/activate a Python 3.11+ environment and install `requirements.txt` for th
 From `projects/agent-crash-lab-m1`:
 
 ```powershell
-python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py
+python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py test_reliability_stats.py test_model_version_log.py test_calibration.py test_typed_answers.py test_run_mode.py test_m1b_live_model_log.py
 python m2_report.py
 ```
 
-The current combined offline gate is 41 tests.
+The current combined offline gate is 92 tests: 41 experiment/evidence tests plus 51 measurement-harness tests. None of them call Solari, a browser, or a model provider; the harness tests use fakes and `httpx.MockTransport`.
 
 Live experiments additionally require `SOLARI_API_KEY` and `OPENAI_API_KEY`. `CRASHLAB_MODEL` is optional and defaults to the model frozen by the relevant experiment. Never commit `.env` files, API keys, preview URLs, CDP/WS endpoints, raw session/sandbox identifiers, or signed replay capabilities.
 
@@ -134,6 +134,54 @@ Live experiments additionally require `SOLARI_API_KEY` and `OPENAI_API_KEY`. `CR
 - `evidence/m1c_characterization.json` — canonical sanitized M1C evidence artifact.
 - `m2_report.py` — deterministic standalone HTML evidence renderer.
 - `test_m2_evidence.py`, `test_m2_report.py` — evidence integrity, sanitization, and report tests.
+- `reliability_stats.py` — shared `wilson_interval()` (moved unchanged from `m1c_reliability.py`, which re-exports it).
+- `run_log.py` — append-only JSONL run-log helper.
+- `model_version_log.py` — per-call returned-model-version log with `restart` / `mark_invalid` policies and an httpx hook for OpenAI-compatible clients.
+- `calibration.py` — confidence-binned calibration table with Wilson intervals and a minimum-count "not measured" rule.
+- `typed_answers.py` — yes/no, choice-from-list, and fixed-scale score parser; malformed answers become explicit MISSING results.
+- `run_mode.py` — shadow-then-score switch, frozen threshold checks, and a decision/rejection log.
+
+## Measurement harness modules
+
+These modules are generic: they do not depend on Solari or browser-use and can back a client harness. They do not change the frozen M1B/M1C protocols or the canonical M1C evidence.
+
+Per-call model version (the provider-returned `model`, not the requested family):
+
+```python
+from model_version_log import ModelVersionLog, ModelVersionChanged
+
+log = ModelVersionLog("runs/model_calls.jsonl", run_id, policy="restart")  # or "mark_invalid"
+response = client.chat.completions.create(model="gpt-5", messages=messages)
+log.record("gpt-5", response.model)          # raises ModelVersionChanged/ModelVersionMissing under restart
+summary = log.write_summary()                 # run_valid, versions_seen, changed/missing call ids
+```
+
+For SDKs that accept an `httpx.AsyncClient`, `ModelVersionHttpHook.async_client(log)` records every successful call without raising into the SDK; poll `log.restart_required` or call `log.raise_if_restart_required()`. `m1b_live.run_trial(..., model_version_log_path=...)` uses this path (opt-in; the default trial path is unchanged).
+
+Calibration table:
+
+```python
+from calibration import CalibrationTable, JudgedAnswer
+
+table = CalibrationTable.build([JudgedAnswer(0.8, True), ...], min_count=10, missing_count=n_missing)
+print(CalibrationTable.to_markdown(table)); CalibrationTable.to_json(table)
+```
+
+Typed answers and shadow-then-score:
+
+```python
+from typed_answers import ChoiceQuestion, TypedAnswerParser
+from run_mode import DecisionLedger, RunMode, ThresholdCheck
+
+question = ChoiceQuestion("department", ("billing", "technical"))
+answer = TypedAnswerParser.parse(question, model_text)       # ParsedAnswer or MissingAnswer(reason)
+checks = [ThresholdCheck("department_confidence_floor", "confidence", ">=", 0.6)]
+
+shadow = DecisionLedger("runs/decisions.jsonl", "shadow-1", RunMode.SHADOW, checks)
+shadow.decide("route", "department_confidence_floor", answer, action=route)   # logged, never acted
+shadow.finish()
+score = DecisionLedger("runs/decisions.jsonl", "score-1", RunMode.SCORE, checks, shadow_run_id="shadow-1")
+```
 
 ## Current status
 

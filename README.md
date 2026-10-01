@@ -88,10 +88,10 @@ The project deliberately treats evaluation methodology as part of the product:
 From `projects/agent-crash-lab-m1`:
 
 ```powershell
-python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py
+python -m unittest -v test_m1b_state_machine.py test_m1b_campaign.py test_m1c_reliability.py test_m2_evidence.py test_m2_report.py test_reliability_stats.py test_model_version_log.py test_calibration.py test_typed_answers.py test_run_mode.py test_m1b_live_model_log.py
 ```
 
-Current combined offline gate: **41 tests**.
+Current combined offline gate: **92 tests** (41 experiment/evidence tests plus 51 measurement-harness tests).
 
 Live agent experiments additionally require Python 3.11+, the dependencies in `requirements.txt`, and locally configured `SOLARI_API_KEY` and `OPENAI_API_KEY`. Never commit secrets or capability URLs.
 
