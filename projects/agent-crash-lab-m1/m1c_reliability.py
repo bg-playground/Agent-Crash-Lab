@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import math
 import os
 from collections import Counter
 from dataclasses import dataclass
@@ -13,10 +12,11 @@ from solari_sandbox import SandboxClient
 
 from m1b_campaign import CampaignInfrastructureError, execute_trial, failure_class
 from m1b_live import BASE_URL, CHAOSSHOP_SERVER, MODEL, PORT, Trial
+# Moved to reliability_stats; re-exported so existing callers keep working.
+from reliability_stats import WILSON_Z as WILSON_Z, wilson_interval as wilson_interval
 
 VALID_TRIALS = 20
 CONDITION = ("review_rollback",)
-WILSON_Z = 1.959963984540054
 # Solari preview capabilities expire after roughly an hour. Renew between trials
 # so a long characterization does not become permanently infrastructure-invalid.
 PREVIEW_RENEWAL_SECONDS = 45 * 60
@@ -53,23 +53,6 @@ class BrowserTransportMonitor(logging.Handler):
         message = record.getMessage().lower()
         if any(marker in message for marker in TERMINAL_BROWSER_TRANSPORT_MARKERS):
             self.terminal_failure = True
-
-
-def wilson_interval(successes: int, trials: int, z: float = WILSON_Z) -> tuple[float, float]:
-    if trials <= 0:
-        raise ValueError("trials must be positive")
-    if successes < 0 or successes > trials:
-        raise ValueError("successes must be between zero and trials")
-    p = successes / trials
-    z2 = z * z
-    denominator = 1.0 + z2 / trials
-    center = (p + z2 / (2.0 * trials)) / denominator
-    margin = (
-        z
-        * math.sqrt((p * (1.0 - p) / trials) + (z2 / (4.0 * trials * trials)))
-        / denominator
-    )
-    return max(0.0, center - margin), min(1.0, center + margin)
 
 
 def summarize(trials: list[Trial], invalid_attempts: int) -> Characterization:
